@@ -358,10 +358,22 @@ static void checkGitHubForUpdate() {
   Serial.printf("Current firmware: %s\n", FW_VERSION);
   Serial.printf("Remote firmware:  %s\n", remoteVersion.c_str());
 
-  if (device != DEVICE_NAME || status != "published" ||
-      firmwareUrl.length() == 0 || expectedSha256.length() != 64) {
-    Serial.println("Manifest fields are invalid or device does not match.");
-    showLines("Manifest/device", "MISMATCH");
+  if (device != DEVICE_NAME) {
+    Serial.println("Manifest device does not match this board.");
+    showLines("Manifest device", "MISMATCH");
+    return;
+  }
+
+  if (status != "published") {
+    Serial.printf("OTA deployment is not active. Manifest status: %s\\n",
+                  status.c_str());
+    showLines("OTA deployment", status == "hold" ? "PAUSED" : "NOT ACTIVE");
+    return;
+  }
+
+  if (firmwareUrl.length() == 0 || expectedSha256.length() != 64) {
+    Serial.println("Manifest firmware URL or SHA256 is invalid.");
+    showLines("Manifest fields", "INVALID");
     return;
   }
 
