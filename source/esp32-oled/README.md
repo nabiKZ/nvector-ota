@@ -15,7 +15,7 @@
 - Board: ESP32 Dev Module
 - Partition Scheme: Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)
 - Install libraries: U8g2 by olikraus, ArduinoJson (6.21+ or 7)
-- ESP32 Arduino core: 3.3.12 or newer in the 3.3.x line (the sketch uses the built-in CA bundle and the mbedTLS SHA-256 API).
+- ESP32 Arduino core: 3.3.12 or newer (the sketch uses the built-in CA bundle and the Update library SHA-256 verification API).
 
 ## Configure before compiling
 In `esp32-oled-ota-1.0.1.ino`, set:
