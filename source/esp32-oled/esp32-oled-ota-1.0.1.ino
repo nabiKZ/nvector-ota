@@ -33,7 +33,6 @@
 #include <U8g2lib.h>
 #include <SPI.h>
 #include <time.h>
-#include <mbedtls/sha256.h>
 #include <esp_arduino_version.h>
 
 #if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 3, 12)
@@ -164,18 +163,6 @@ static bool isNewerVersion(const String& candidate, const String& current) {
   return cPat > lPat;
 }
 
-static String sha256ToHex(const uint8_t digest[32]) {
-  static const char hex[] = "0123456789abcdef";
-  String result;
-  result.reserve(64);
-
-  for (size_t i = 0; i < 32; ++i) {
-    result += hex[(digest[i] >> 4) & 0x0F];
-    result += hex[digest[i] & 0x0F];
-  }
-  return result;
-}
-
 static bool downloadAndVerifyFirmware(const String& firmwareUrl,
                                       const String& expectedSha256) {
   WiFiClientSecure tls;
@@ -221,14 +208,13 @@ static bool downloadAndVerifyFirmware(const String& firmwareUrl,
     return false;
   }
 
-  mbedtls_sha256_context sha;
-  mbedtls_sha256_init(&sha);
-
-  if (mbedtls_sha256_starts_ret(&sha, 0) != 0) {
-    mbedtls_sha256_free(&sha);
+  // Update library performs SHA-256 verification while receiving the image.
+  // setSHA256() must be called after begin() and before the first write().
+  if (!Update.setSHA256(expectedSha256.c_str())) {
+    Serial.println("Update.setSHA256 rejected the manifest digest.");
     Update.abort();
     http.end();
-    showLines("SHA256 init", "FAILED");
+    showLines("SHA256 setup", "FAILED");
     return false;
   }
 
@@ -249,12 +235,6 @@ static bool downloadAndVerifyFirmware(const String& firmwareUrl,
       break;
     }
 
-    if (mbedtls_sha256_update_ret(&sha, buffer, count) != 0) {
-      Serial.println("SHA256 update failed.");
-      writeOk = false;
-      break;
-    }
-
     const size_t written = Update.write(buffer, count);
     if (written != count) {
       Serial.println("Flash write failed.");
@@ -268,40 +248,24 @@ static bool downloadAndVerifyFirmware(const String& firmwareUrl,
     delay(1);
   }
 
-  uint8_t digest[32];
-  const int finishResult = mbedtls_sha256_finish_ret(&sha, digest);
-  mbedtls_sha256_free(&sha);
   http.end();
 
-  if (!writeOk || received != (size_t)contentLength || finishResult != 0) {
+  if (!writeOk || received != (size_t)contentLength) {
     Update.abort();
     showLines("OTA transfer", "FAILED");
     return false;
   }
 
-  String actualSha256 = sha256ToHex(digest);
-  String wantedSha256 = expectedSha256;
-  wantedSha256.toLowerCase();
-
-  Serial.print("Expected SHA256: ");
-  Serial.println(wantedSha256);
-  Serial.print("Actual SHA256:   ");
-  Serial.println(actualSha256);
-
-  if (actualSha256 != wantedSha256) {
-    Serial.println("SHA256 mismatch. Firmware will NOT be activated.");
-    Update.abort();
-    showLines("SHA256 mismatch", "UPDATE ABORTED");
-    return false;
-  }
-
   if (!Update.end()) {
-    Serial.print("Update.end failed: ");
+    Serial.print("Update.end failed (including image/checksum validation): ");
     Update.printError(Serial);
     Update.abort();
     showLines("Flash finalize", "FAILED");
     return false;
   }
+
+  Serial.print("Verified firmware SHA256: ");
+  Serial.println(Update.sha256String());
 
   if (!Update.isFinished()) {
     Serial.println("Update not finished.");
