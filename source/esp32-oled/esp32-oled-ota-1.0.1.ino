@@ -170,6 +170,40 @@ static bool isNewerVersion(const String& candidate, const String& current) {
   return cPat > lPat;
 }
 
+
+class OTAUpdateStream : public Stream {
+public:
+  explicit OTAUpdateStream(size_t totalBytes) : total_(totalBytes), received_(0) {}
+
+  size_t write(uint8_t value) override {
+    return write(&value, 1);
+  }
+
+  size_t write(const uint8_t* data, size_t length) override {
+    if (data == nullptr || length == 0) return 0;
+
+    // Update.write() in ESP32 Arduino Core accepts a mutable pointer.
+    size_t written = Update.write(const_cast<uint8_t*>(data), length);
+    received_ += written;
+
+    if (total_ > 0 && written > 0) {
+      showProgress(received_, total_);
+    }
+    return written;
+  }
+
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+
+  size_t received() const { return received_; }
+
+private:
+  size_t total_;
+  size_t received_;
+};
+
 static bool downloadAndVerifyFirmware(const String& firmwareUrl,
                                       const String& expectedSha256) {
   WiFiClientSecure tls;
@@ -191,7 +225,8 @@ static bool downloadAndVerifyFirmware(const String& firmwareUrl,
 
   const int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
-    Serial.printf("Firmware HTTP error: %d\n", httpCode);
+    Serial.printf("Firmware HTTP error: %d (%s)\n",
+                  httpCode, HTTPClient::errorToString(httpCode).c_str());
     http.end();
     showLines("Firmware download", "HTTP ERROR");
     return false;
@@ -215,8 +250,8 @@ static bool downloadAndVerifyFirmware(const String& firmwareUrl,
     return false;
   }
 
-  // Update library performs SHA-256 verification while receiving the image.
-  // setSHA256() must be called after begin() and before the first write().
+  // Update library calculates SHA-256 while bytes are written and validates
+  // the complete image in Update.end(). Set expected hash before first write.
   if (!Update.setSHA256(expectedSha256.c_str())) {
     Serial.println("Update.setSHA256 rejected the manifest digest.");
     Update.abort();
@@ -225,46 +260,33 @@ static bool downloadAndVerifyFirmware(const String& firmwareUrl,
     return false;
   }
 
-  Stream* stream = http.getStreamPtr();
-  stream->setTimeout(30000);
+  OTAUpdateStream updateStream((size_t)contentLength);
 
-  uint8_t buffer[1024];
-  size_t received = 0;
-  bool writeOk = true;
-
-  while (received < (size_t)contentLength) {
-    const size_t requested = min(sizeof(buffer), (size_t)contentLength - received);
-    const size_t count = stream->readBytes(buffer, requested);
-
-    if (count == 0) {
-      Serial.println("Firmware stream ended before all bytes arrived.");
-      writeOk = false;
-      break;
-    }
-
-    const size_t written = Update.write(buffer, count);
-    if (written != count) {
-      Serial.println("Flash write failed.");
-      Update.printError(Serial);
-      writeOk = false;
-      break;
-    }
-
-    received += count;
-    showProgress(received, (size_t)contentLength);
-    delay(1);
-  }
-
+  Serial.println("Streaming HTTPS response directly to OTA partition...");
+  // HTTPClient::writeToStream() handles transient TLS read() == 0 results,
+  // waiting for more data until its TCP timeout instead of treating a
+  // temporary lack of TLS data as an immediate end-of-file.
+  const int streamedBytes = http.writeToStream(&updateStream);
+  const String streamError = HTTPClient::errorToString(streamedBytes);
   http.end();
 
-  if (!writeOk || received != (size_t)contentLength) {
+  Serial.printf("HTTPClient stream result: %d (%s)\n",
+                streamedBytes, streamError.c_str());
+  Serial.printf("OTA bytes written: %u / %u\n",
+                (unsigned int)updateStream.received(),
+                (unsigned int)contentLength);
+
+  if (streamedBytes < 0 ||
+      updateStream.received() != (size_t)contentLength ||
+      streamedBytes != contentLength) {
+    Serial.println("HTTPS stream incomplete; aborting inactive OTA slot.");
     Update.abort();
-    showLines("OTA transfer", "FAILED");
+    showLines("OTA transfer", "INCOMPLETE");
     return false;
   }
 
   if (!Update.end()) {
-    Serial.print("Update.end failed (including image/checksum validation): ");
+    Serial.print("Update.end failed (image/SHA256 validation): ");
     Update.printError(Serial);
     Update.abort();
     showLines("Flash finalize", "FAILED");
