@@ -318,7 +318,7 @@ static void checkGitHubForUpdate() {
   const String payload = http.getString();
   http.end();
 
-  DynamicJsonDocument doc(1024);
+  JsonDocument doc;
   const DeserializationError jsonError = deserializeJson(doc, payload);
   if (jsonError) {
     Serial.print("Manifest JSON error: ");
