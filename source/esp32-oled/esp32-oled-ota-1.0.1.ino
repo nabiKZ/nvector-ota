@@ -72,6 +72,13 @@ static void showLines(const char* line1, const char* line2, const char* line3 = 
   oled.sendBuffer();
 }
 
+
+static void showVersionStatus(const char* status, const char* details = "") {
+  char versionLine[24];
+  snprintf(versionLine, sizeof(versionLine), "FW: %s", FW_VERSION);
+  showLines(versionLine, status, details);
+}
+
 static void showProgress(size_t done, size_t total) {
   unsigned int percent = total ? (unsigned int)((done * 100ULL) / total) : 0;
   if (percent > 100) percent = 100;
@@ -338,7 +345,7 @@ static void checkGitHubForUpdate() {
 
   if (!isNewerVersion(remoteVersion, FW_VERSION)) {
     Serial.println("No newer firmware available.");
-    showLines("FW: " FW_VERSION, "Already up to date");
+    showVersionStatus("Already up to date");
     delay(1200);
     return;
   }
@@ -361,17 +368,17 @@ void setup() {
   delay(300);
 
   oled.begin();
-  showLines("FW: " FW_VERSION, "Starting...");
+  showVersionStatus("Starting...");
 
   if (!waitForWiFi()) {
     delay(1500);
-    showLines("FW: " FW_VERSION, "Offline mode");
+    showVersionStatus("Offline mode");
     return;
   }
 
   if (!syncClock()) {
     delay(1500);
-    showLines("FW: " FW_VERSION, "Time unavailable");
+    showVersionStatus("Time unavailable");
     return;
   }
 
