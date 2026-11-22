@@ -365,7 +365,7 @@ static void checkGitHubForUpdate() {
   }
 
   if (status != "published") {
-    Serial.printf("OTA deployment is not active. Manifest status: %s\\n",
+    Serial.printf("OTA deployment is not active. Manifest status: %s\n",
                   status.c_str());
     showLines("OTA deployment", status == "hold" ? "PAUSED" : "NOT ACTIVE");
     return;
