@@ -1,7 +1,7 @@
 {
   "device": "ESP32-OLED",
   "version": "1.0.2",
-  "status": "published",
+  "status": "hold",
   "firmware": "https://github.com/nabiKZ/nvector-ota/releases/download/1.0.2/firmware.bin",
   "sha256": "7E9EFCD9316B4AB9F2810D9991A72530BE952BE164C9A3339CD470F6585E0345"
 }
