@@ -1,0 +1,6 @@
+{
+  "device": "ESP32-OLED",
+  "version": "1.0.0",
+  "firmware": "https://github.com/nabiKZ/nvector-ota/releases/download/v1.0.0/firmware.bin",
+  "sha256": "REPLACE_WITH_SHA256"
+}
